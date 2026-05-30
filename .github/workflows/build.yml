@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Mod Repository
@@ -47,6 +49,15 @@ jobs:
           PROJECT_NAME=$(grep "^CMAKE_PROJECT_NAME:" Ghostship/workspace/mod-source/build/CMakeCache.txt | sed 's/.*=//')
           echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
 
+      - name: Read Manifest Metadata
+        id: manifest
+        run: |
+          MANIFEST_PATH=Ghostship/workspace/mod-source/manifest.json
+          MOD_NAME=$(python3 -c "import json;print(json.load(open('$MANIFEST_PATH'))['name'])")
+          MOD_VERSION=$(python3 -c "import json;print(json.load(open('$MANIFEST_PATH'))['version'])")
+          echo "mod_name=$MOD_NAME" >> $GITHUB_OUTPUT
+          echo "mod_version=$MOD_VERSION" >> $GITHUB_OUTPUT
+
       - name: Build Mod
         run: |
           cd Ghostship/workspace/mod-source
@@ -61,11 +72,21 @@ jobs:
           python3 ../../libultraship/tools/sign.py ${{ steps.meta.outputs.project_name }}.zip private_key.pem
           rm private_key.pem
           unzip ${{ steps.meta.outputs.project_name }}.zip -d signed-output
-          rm ${{ steps.meta.outputs.project_name }}.zip
+          mv ${{ steps.meta.outputs.project_name }}.zip ${{ steps.meta.outputs.project_name }}.o2r
 
       - name: Upload Mod Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.project_name }}
-          path: Ghostship/workspace/mod-source/signed-output/
+          path: |
+            Ghostship/workspace/mod-source/signed-output/
+            Ghostship/workspace/mod-source/${{ steps.meta.outputs.project_name }}.o2r
           retention-days: 7
+
+      - name: Publish Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.manifest.outputs.mod_version }}
+          name: ${{ steps.manifest.outputs.mod_name }} v${{ steps.manifest.outputs.mod_version }}
+          files: Ghostship/workspace/mod-source/${{ steps.meta.outputs.project_name }}.o2r
